@@ -1,0 +1,11 @@
+echo "** Creating database"
+
+mysql -u root -p"$MYSQL_ROOT_PASSWORD" --execute \
+"
+CREATE USER IF NOT EXISTS $DB_USERNAME@'%' IDENTIFIED BY '$DB_PASSWORD';
+CREATE DATABASE IF NOT EXISTS $DB_DATABASE;
+GRANT ALL PRIVILEGES ON $DB_DATABASE.* TO $DB_USERNAME@'%';
+FLUSH PRIVILEGES;
+"
+echo "** Database was created successfully"
+

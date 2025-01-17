@@ -1,0 +1,81 @@
+version: '3.4'
+services:
+  db:
+    image: mysql:8
+    cap_add:
+      - SYS_NICE
+    environment:
+      - MYSQL_ROOT_PASSWORD=${DB_PASSWORD}
+      - MYSQL_ROOT_HOST=%
+      - DB_DATABASE=${DB_DATABASE}
+      - DB_USERNAME=${DB_USERNAME}
+      - DB_PASSWORD=${DB_PASSWORD}
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./docker/db/my.cnf:/etc/my.cnf
+      - ./docker/db/init.sh:/docker-entrypoint-initdb.d/init.sh
+      - ./log/mysql:/var/log/mysql
+    ports:
+      - ${DOCKER_MYSQL_PORT}:3306
+    command: --default-authentication-plugin=mysql_native_password --sql_mode=""
+    restart: unless-stopped
+
+  project:
+    build:
+      context: docker/project
+      target: ${PHP_APP_IMAGE_STAGE:-app_base}
+    environment:
+      - PHP_IDE_CONFIG=${PHP_IDE_CONFIG}
+    volumes:
+      - ./project:/var/www/project
+      - ./log/project:/var/www/log
+      - ./docker/project/ini/api.xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini
+      - ./docker/project/nginx.conf:/etc/nginx/sites-enabled/default
+      - ./docker/project/entrypoint.sh:/entrypoint.sh
+    working_dir: /var/www/project
+    ports:
+      - ${DOCKER_PROJECT_PORT}:80
+    expose:
+      - 9003
+    entrypoint: /entrypoint.sh
+    restart: unless-stopped
+    depends_on:
+      - db
+
+  scheduler:
+    build:
+      context: docker/project
+      target: ${PHP_APP_IMAGE_STAGE:-app_base}
+    volumes:
+      - ./project:/var/www/project
+    working_dir: /var/www/project
+    command: bash -c "while true; do sleep $$((60 - $$(date +'%s') % 60)); sudo -u www-data php artisan schedule:run; done"
+    restart: unless-stopped
+    depends_on:
+      - db
+      - project
+
+  horizon:
+    build:
+      context: docker/project
+      target: ${PHP_APP_IMAGE_STAGE:-app_base}
+    volumes:
+      - ./project:/var/www/project
+    working_dir: /var/www/project
+    command: ["php", "artisan", "horizon"]
+    restart: always
+    depends_on:
+      - db
+      - project
+
+  redis:
+    image: redis:latest
+    restart: always
+    ports:
+      - ${REDIS_PORT}:6379
+    entrypoint: redis-server --appendonly yes  --requirepass ${REDIS_PASSWORD}
+    volumes:
+      - ./log/redis:/data
+
+volumes:
+  mysql-data:
